@@ -1,0 +1,16 @@
+Task 5's previous accuracies: [0.0, 0.0, 0.0, 0.0, 2.0454545454545454, 97.27272727272727, 0.0]
+After 1 epochs, Train acc: 22.4667, Train loss: 3.5636
+After 2 epochs, Train acc: 62.8000, Train loss: 2.4990
+After 3 epochs, Train acc: 66.4000, Train loss: 2.0944
+After 4 epochs, Train acc: 74.3333, Train loss: 1.8645
+After 5 epochs, Train acc: 82.0667, Train loss: 1.6811
+After 6 epochs, Train acc: 82.3333, Train loss: 1.5728
+After 7 epochs, Train acc: 82.1333, Train loss: 1.5062
+After 8 epochs, Train acc: 84.4000, Train loss: 1.3987
+After 9 epochs, Train acc: 90.4000, Train loss: 1.2878
+After 10 epochs, Train acc: 95.5333, Train loss: 1.2118
+Task 6 - Test acc: 13.8961, Test loss: 4.3071
+Task 6's current accuracies: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 97.27272727272727]
+Task_accuracies is [[97.27272727272727], [0.0, 98.18181818181819], [0.0, 0.0, 96.36363636363636], [0.0, 0.0, 0.0, 98.18181818181819], [0.0, 0.0, 0.0, 2.9545454545454546, 95.68181818181819], [0.0, 0.0, 0.0, 0.0, 2.0454545454545454, 97.27272727272727], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 97.27272727272727]]  
+previous_task_accuracies is [[97.27272727272727, 0.0], [0.0, 98.18181818181819, 0.0], [0.0, 0.0, 96.36363636363636, 0.0], [0.0, 0.0, 0.0, 98.18181818181819, 0.0], [0.0, 0.0, 0.0, 2.9545454545454546, 95.68181818181819, 0.0], [0.0, 0.0, 0.0, 0.0, 2.0454545454545454, 97.27272727272727, 0.0]]
+Final Average Accuracy (ACC): 36.1724%, Final Forgetting (FGT): 16.5027%

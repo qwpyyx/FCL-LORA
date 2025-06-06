@@ -1,0 +1,2 @@
+Task 0's previous accuracies: [96.71428571428571, 0.0]
+After 1 epochs, Train acc: 36.6667, Train loss: 3.1803

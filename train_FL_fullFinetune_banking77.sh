@@ -1,0 +1,2 @@
+python3 federated_main.py --mode federated --is_peft=0 --model=roberta_base --dataset=banking77 --iid=0 --encoders_lr=1e-2 --epochs=10 --gpu 1 --task_num 6 --fg_nc 11 --total_classes 77 --local_ep 10 --num_users 20 --client_local 5 --niid_type D --beta 0.1 --local_bs=64
+python3 federated_main.py --mode federated --is_peft=0 --model=roberta_base --dataset=banking77 --iid=0 --encoders_lr=1e-3 --epochs=10 --gpu 1 --task_num 6 --fg_nc 11 --total_classes 77 --local_ep 10 --num_users 20 --client_local 5 --niid_type D --beta 0.1 --local_bs=64

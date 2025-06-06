@@ -1,0 +1,12 @@
+After 1 epochs, Train acc: 8.9552, Train loss: 3.5116
+After 2 epochs, Train acc: 11.2619, Train loss: 2.9995
+After 3 epochs, Train acc: 18.1140, Train loss: 2.8429
+After 4 epochs, Train acc: 58.4125, Train loss: 2.1738
+After 5 epochs, Train acc: 89.8915, Train loss: 1.1555
+After 6 epochs, Train acc: 96.8114, Train loss: 0.5352
+After 7 epochs, Train acc: 97.8290, Train loss: 0.3157
+After 8 epochs, Train acc: 99.1180, Train loss: 0.2133
+After 9 epochs, Train acc: 99.2537, Train loss: 0.1643
+After 10 epochs, Train acc: 99.1859, Train loss: 0.1468
+Task 0 - Test acc: 97.9545, Test loss: 0.1317
+Task 0's current accuracies: [97.95454545454545]

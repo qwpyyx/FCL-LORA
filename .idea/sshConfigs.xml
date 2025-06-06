@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SshConfigs">
+    <configs>
+      <sshConfig host="172.31.233.163" id="1028fdf8-590c-4046-9296-c16ca4e47ab1" keyPath="D:\CodeLife\qiuwenqi.ppk" port="22" nameFormat="DESCRIPTIVE" username="qiuwenqi" useOpenSSHConfig="true" />
+    </configs>
+  </component>
+</project>

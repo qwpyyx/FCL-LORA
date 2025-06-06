@@ -1,0 +1,9 @@
+Task 1's previous accuracies: [0.0, 89.21428571428571, 0.0]
+After 1 epochs, Train acc: 19.3095, Train loss: 3.7078
+After 2 epochs, Train acc: 66.4524, Train loss: 2.8825
+After 3 epochs, Train acc: 80.3333, Train loss: 2.3910
+After 4 epochs, Train acc: 83.0238, Train loss: 2.0978
+After 5 epochs, Train acc: 85.9048, Train loss: 1.8910
+After 6 epochs, Train acc: 86.5000, Train loss: 1.7465
+Task 2 - Test acc: 29.2381, Test loss: 3.5997
+Task 2's current accuracies: [0.0, 0.0, 87.71428571428571]
