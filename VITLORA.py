@@ -17,6 +17,7 @@ from networks import fisher_model, ldbr_model
 from networks.buffer import FixedSizeBuffer
 from sklearn.metrics import f1_score, confusion_matrix
 from FedCLModule import FedCLModule
+from src.MABFedCL import MABFedCL
 
 logger = logging.getLogger(__name__)
 MODEL_CONFIG_CLASSES = list(MODEL_MAPPING.keys())
@@ -83,6 +84,36 @@ class vitlora:
                     prev_pold=None,
                     prev_rold=None
                 )
+        elif 'MABFedCL' in self.args.baseline:
+            self.fedcl_module = MABFedCL(
+                self.global_model,
+                args=self.args,
+                accelerator=accelerator,
+                tau=0.6,
+                topk_ratio=self.args.topk_ratio
+            )
+            # if self.args.task > 0:
+            #     mab_path = os.path.join(self.args.last_ckpt, 'preserved_mab_state.pt')
+            #     mab_state = torch.load(mab_path, map_location='cpu')
+            #     tau = mab_state.get('tau', 0.6)
+            #     topk_ratio = mab_state.get('topk_ratio', self.args.topk_ratio)
+            # else:
+            #     tau = 0.6
+            #     topk_ratio = self.args.topk_ratio
+            # # 初始化新的 MABFedCL 算法模块
+            # self.fedcl_module = MABFedCL(
+            #     self.global_model,
+            #     args=self.args,
+            #     accelerator=accelerator,
+            #     tau=tau,
+            #     topk_ratio=topk_ratio
+            # )
+
+
+
+
+
+
 
     def _load_datasets(self):
         if "banking" in self.args.dataset:
@@ -723,6 +754,7 @@ class vitlora:
             client_readouts = {}
             client_sample_counts = {}
             client_phi = {}
+            client_tau = {}  # 每个客户端搜索得到的最佳 tau
             for idx in idxs_users:
                 # 每个客户端使用其对应的索引
                 local_data_indices = user_groups[idx]
@@ -747,6 +779,22 @@ class vitlora:
                     client_readouts[idx] = R_i
                     client_sample_counts[idx] = total_samples
                     client_phi[idx] = phi_avg
+
+                elif 'MABFedCL' in self.args.baseline:
+                    prototypes, R_i, total_samples, delta_model, phi_avg, tau_val = self.update_weights_local(
+                        model=local_model_copy,
+                        lr=encoder_lr,
+                        train_loader=train_loader,
+                        accelerator=accelerator,
+                        dev_loader=None, idx=idx,
+                        current_task=current_task)
+                    grad_dist[idx] = delta_model
+                    client_prototypes[idx] = prototypes
+                    client_readouts[idx] = R_i
+                    client_sample_counts[idx] = total_samples
+                    client_phi[idx] = phi_avg
+                    client_tau[idx] = tau_val
+
                 else:
                     local_model, _ = self.update_weights_local(model=local_model_copy, lr=encoder_lr,
                                                                train_loader=train_loader, accelerator=accelerator,
@@ -755,6 +803,8 @@ class vitlora:
 
                     grad, param = self.get_grad(local_model)
                     grad_dist[idx] = grad
+
+
 
             if 'AMAFCL' in self.args.baseline:
                 tau, P_old_new, R_old_new, self.global_model, S_global, S_readout = self.fedcl_module.server_aggregate_and_meta_update(
@@ -766,6 +816,17 @@ class vitlora:
                     lambda_KD=0.1,
                     lambda_conf=0.1
                 )
+
+            elif 'MABFedCL' in self.args.baseline:
+                # 聚合阶段会同步各客户端的 tau
+                tau, _, _, self.global_model = self.fedcl_module.server_aggregate(
+                    client_updates=grad_dist,
+                    client_prototypes=client_prototypes,
+                    client_readouts=client_readouts,
+                    client_sample_counts=client_sample_counts,
+                    client_tau=client_tau
+                )
+
             else:
                 grad, self.global_model = self.aggregate(grad_dist=grad_dist, cohorts=idxs_users,
                                                          partition_map=user_groups)
@@ -779,6 +840,9 @@ class vitlora:
             if 'AMAFCL' in self.args.baseline:
                 save_old_param(tau, P_old_new, R_old_new, S_global, S_readout,
                                accelerator, self.args.output_dir)
+            # if 'MABFedCL' in self.args.baseline:
+            #     k_glob = getattr(self.fedcl_module, 'topk_ratio', self.args.topk_ratio)
+            #     save_mab_state(tau, k_glob, accelerator, self.args.output_dir)
             logger.info(f"Preserved server state saved to {self.args.output_dir}")
 
 
@@ -1013,6 +1077,57 @@ class vitlora:
             if accelerator.is_main_process:
                 logger.info(f"Client {idx} Task {current_task}: AMAFCL 本地训练结束")
             return prototypes, R_i, total_samples, delta_model, phi_avg
+
+        elif 'MABFedCL' in self.args.baseline:
+            if accelerator.is_main_process:
+                logger.info(f"Client {idx} Task {current_task}: 使用 MABFedCL 算法进行本地更新")
+
+            network_params = []
+            if self.args.is_peft:
+                for name, param in model.named_parameters():
+                    if 'lora' in name.lower() and param.requires_grad:
+                        network_params.append({'params': param, 'lr': lr})
+            else:
+                for param in model.parameters():
+                    network_params.append({'params': param, 'lr': lr})
+            from transformers import AdamW
+            optimizer = AdamW(network_params)
+
+            num_update_steps_per_epoch = math.ceil(len(train_loader) / self.args.gradient_accumulation_steps)
+            if self.args.max_train_steps is None:
+                self.args.max_train_steps = self.args.local_ep * num_update_steps_per_epoch
+            else:
+                self.args.epoch = math.ceil(self.args.max_train_steps / num_update_steps_per_epoch)
+
+            if self.args.lr_scheduler_type == 'none':
+                lr_scheduler = None
+            else:
+                lr_scheduler = get_scheduler(
+                    name=self.args.lr_scheduler_type,
+                    optimizer=optimizer,
+                    num_warmup_steps=self.args.num_warmup_steps,
+                    num_training_steps=self.args.max_train_steps,
+                )
+
+            model, optimizer, train_loader = accelerator.prepare(model, optimizer, train_loader)
+
+            prototypes, R_i, total_samples, delta_model, phi_avg, tau_val = self.fedcl_module.local_training(
+                model,
+                train_loader,
+                optimizer,
+                lr_scheduler,
+                idx,
+                current_output_dir,
+                historical_grad=loaded_hist_grad,
+                local_ep=self.args.local_ep,
+                current_task=current_task,
+            )
+            # tau_val 为本轮搜索得到的最佳阈值
+
+            if accelerator.is_main_process:
+                logger.info(f"Client {idx} Task {current_task}: MABFedCL 本地训练结束")
+            return prototypes, R_i, total_samples, delta_model, phi_avg, tau_val
+
 
         # EWC 相关
         if 'ewc' in self.args.baseline:

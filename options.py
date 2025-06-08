@@ -87,6 +87,20 @@ def args_parser():
     parser.add_argument('--max_pool', type=str, default='True',
                         help="Whether use max pooling rather than \
                         strided convolutions")
+
+    # MAB
+    parser.add_argument('--tau_candidates', type=str, default='0.1,0.2,0.3,0.4,0.5,0.7,0.9',
+                        help='候选的阈值列表，逗号分隔')
+    parser.add_argument('--mab_rounds', type=int, default=10,
+                        help='MAB 搜索 tau 的探索轮数')
+    parser.add_argument('--lambda1', type=float, default=0.2,
+                        help='遗忘惩罚系数')
+    parser.add_argument('--lambda2', type=float, default=0.1,
+                        help='通信惩罚系数')
+    parser.add_argument('--k_candidates', type=str, default='0.1,0.2,0.3,0.4,0.5',
+                        help='候选的压缩率列表')
+
+
     # other arguments
     parser.add_argument('--dataset', type=str, default='mnist', help="name \
                         of dataset")

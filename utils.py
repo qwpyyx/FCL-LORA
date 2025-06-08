@@ -1082,3 +1082,24 @@ def save_old_param(tau, P_old_new, R_old_new,
     accelerator.save(preserved_server_state, output_file_path)
 
 
+def save_mab_state(tau, k_ratio, accelerator, output_dir):
+    """Save MABFedCL hyperparameters to ``preserved_mab_state.pt``.
+
+    Parameters
+    ----------
+    tau : float
+        Threshold value for the next round.
+    k_ratio : float
+        Global Top-K ratio used during aggregation.
+    accelerator : ``Accelerator``
+        Accelerator instance for saving the state.
+    output_dir : str
+        Directory to save the state file.
+    """
+
+    state = {
+        'tau': tau,
+        'topk_ratio': k_ratio,
+    }
+    output_file_path = os.path.join(output_dir, 'preserved_mab_state.pt')
+    accelerator.save(state, output_file_path)
