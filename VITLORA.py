@@ -671,46 +671,40 @@ class vitlora:
         train_set = train_set_m.map(preprocess_function, batched=True)
         train_set.set_format(type='torch', columns=['input_ids', 'attention_mask', 'labels'])
 
-        # 如果没有提前计算并缓存过类别范围，则进行计算
-        if not hasattr(self, 'classes_cache'):
-            self.classes_cache = {}
-            for task in range(self.args.total_num):  # 假设任务总数为8
-                if task == 0:
-                    start_class = 0  # 第一个任务的类别从0开始
-                    end_class = self.args.fg_nc  # 第一个任务的类别范围为 [0, fg_nc]
-                else:
-                    start_class = self.args.fg_nc + (task - 1) * self.task_size  # 后续任务的起始类别
-                    end_class = min(self.args.fg_nc + task * self.task_size, self.total_classes)  # 后续任务的结束类别
-                self.classes_cache[task] = [start_class, end_class]
+        current_task = self.args.task
 
-        # 预先筛选训练集和测试集
-        if not hasattr(self, 'task_train_sets'):  # 如果没有预先缓存训练集
-            print("Preprocessing all task's train and test sets...")
-            self.task_train_sets = {}
-            # self.task_test_sets = {}
-            self.current_test_set = {}
-            self.task_masks = {}
+        # 仅计算当前任务及以前任务的类别范围
+        self.classes_cache = {}
+        for task in range(current_task + 1):
+            if task == 0:
+                start_class = 0
+                end_class = self.args.fg_nc
+            else:
+                start_class = self.args.fg_nc + (task - 1) * self.task_size
+                end_class = min(self.args.fg_nc + task * self.task_size, self.total_classes)
+            self.classes_cache[task] = [start_class, end_class]
 
-            for task in range(self.args.total_num):
-                if task == 0:
-                    start_class = 0
-                    end_class = self.args.fg_nc
-                else:
-                    start_class = self.args.fg_nc + (task - 1) * self.task_size  # 后续任务的起始类别
-                    end_class = min(self.args.fg_nc + task * self.task_size, self.total_classes)
+        print("Preprocessing data for tasks up to", current_task)
+        self.task_train_sets = {}
+        self.current_test_set = {}
+        self.task_masks = {}
 
+        for task in range(current_task + 1):
+            start_class, end_class = self.classes_cache[task]
+
+            if task == current_task:
                 self.task_train_sets[task] = train_set.filter(
                     lambda example: start_class <= example['labels'] < end_class
                 )
 
-                self.current_test_set[task] = test_set.filter(
+            self.current_test_set[task] = test_set.filter(
                     lambda example: start_class <= example['labels'] < end_class
-                )
+            )
 
-                task_mask = torch.zeros(300)
-                for idx in range(start_class, end_class):
-                    task_mask[idx] = 1
-                self.task_masks[task] = task_mask
+            task_mask = torch.zeros(300)
+            for idx in range(start_class, end_class):
+                task_mask[idx] = 1
+            self.task_masks[task] = task_mask
 
     def beforeTrain(self, current_task):
 
@@ -755,11 +749,51 @@ class vitlora:
             client_sample_counts = {}
             client_phi = {}
             client_tau = {}  # 每个客户端搜索得到的最佳 tau
+
+            tau_global = None
+
+            if 'MABFedCL' in self.args.baseline:
+                # -------- Stage 1: clients search local tau ---------
+                for idx in idxs_users:
+                    local_data_indices = user_groups[idx]
+                    sample_num.append(len(user_groups[idx]))
+                    client_sample_counts[idx] = len(user_groups[idx])
+
+                    client_dataset = Subset(train_dataset, local_data_indices)
+                    train_loader = DataLoader(
+                        client_dataset,
+                        batch_size=self.args.local_bs,
+                        shuffle=True,
+                        num_workers=0,
+                        collate_fn=self.data_collator,
+                    )
+
+                    local_model_copy = copy.deepcopy(self.global_model)
+
+                    _, _, _, _, _, tau_val = self.update_weights_local(
+                        model=local_model_copy,
+                        lr=encoder_lr,
+                        train_loader=train_loader,
+                        accelerator=accelerator,
+                        dev_loader=None,
+                        idx=idx,
+                        current_task=current_task,
+                        search_only=True,
+                    )
+                    client_tau[idx] = tau_val
+
+                tau_global = self.fedcl_module.aggregate_tau(client_tau, client_sample_counts)
+            else:
+                for idx in idxs_users:
+                    # 每个客户端使用其对应的索引
+                    local_data_indices = user_groups[idx]
+                    # 每个节点样本数
+                    sample_num.append(len(user_groups[idx]))
+                    client_sample_counts[idx] = len(user_groups[idx])
+
+
             for idx in idxs_users:
-                # 每个客户端使用其对应的索引
                 local_data_indices = user_groups[idx]
-                # 每个节点样本数
-                sample_num.append(len(user_groups[idx]))
                 client_dataset = Subset(train_dataset, local_data_indices)
                 train_loader = DataLoader(client_dataset, batch_size=self.args.local_bs, shuffle=True,
                                           num_workers=0,
@@ -781,19 +815,24 @@ class vitlora:
                     client_phi[idx] = phi_avg
 
                 elif 'MABFedCL' in self.args.baseline:
-                    prototypes, R_i, total_samples, delta_model, phi_avg, tau_val = self.update_weights_local(
+                    prototypes, R_i, total_samples, delta_model, phi_avg, _ = self.update_weights_local(
                         model=local_model_copy,
                         lr=encoder_lr,
                         train_loader=train_loader,
                         accelerator=accelerator,
                         dev_loader=None, idx=idx,
-                        current_task=current_task)
+                        current_task=current_task,
+                        search_only=False,
+                        global_tau=tau_global
+                    )
+                    grad_dist[idx] = delta_model
+                    client_prototypes[idx] = prototypes
                     grad_dist[idx] = delta_model
                     client_prototypes[idx] = prototypes
                     client_readouts[idx] = R_i
                     client_sample_counts[idx] = total_samples
                     client_phi[idx] = phi_avg
-                    client_tau[idx] = tau_val
+                    # client_tau[idx] = tau_val
 
                 else:
                     local_model, _ = self.update_weights_local(model=local_model_copy, lr=encoder_lr,
@@ -819,7 +858,7 @@ class vitlora:
 
             elif 'MABFedCL' in self.args.baseline:
                 # 聚合阶段会同步各客户端的 tau
-                tau, _, _, self.global_model = self.fedcl_module.server_aggregate(
+                _, _, _, self.global_model = self.fedcl_module.server_aggregate(
                     client_updates=grad_dist,
                     client_prototypes=client_prototypes,
                     client_readouts=client_readouts,
@@ -984,7 +1023,8 @@ class vitlora:
         training_args = {k: v for k, v in self.args.__dict__.items() if k != 'device'}
         dump_json(training_args, self.args.output_dir + '/../training_args.json')
 
-    def update_weights_local(self, model, lr, train_loader, accelerator, dev_loader, idx, current_task):
+    def update_weights_local(self, model, lr, train_loader, accelerator, dev_loader, idx, current_task,
+                             search_only=False, global_tau=None):
         model.train()
         if accelerator.is_main_process:
             logger.info(f"Client {idx} Task {current_task}: 开始训练")
@@ -1121,6 +1161,8 @@ class vitlora:
                 historical_grad=loaded_hist_grad,
                 local_ep=self.args.local_ep,
                 current_task=current_task,
+                global_tau=global_tau,
+                search_only=search_only,
             )
             # tau_val 为本轮搜索得到的最佳阈值
 

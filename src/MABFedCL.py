@@ -102,7 +102,9 @@ class MABFedCL:
         return compressed_delta
 
     # 执行两阶段的本地训练流程并返回压缩后的模型差分
-    def local_training(self, model, train_loader, optimizer, lr_scheduler, idx, current_output_dir, historical_grad=None, local_ep=1, current_task=0):
+    def local_training(self, model, train_loader, optimizer, lr_scheduler, idx,
+                       current_output_dir, historical_grad=None, local_ep=1,
+                       current_task=0, global_tau=None, search_only=False):
         if self.accelerator.is_main_process:
             logger.info("***** Running training in Local Client *****")
             logger.info(f"Client idx = {idx},  training size = {train_loader.total_dataset_length}")
@@ -121,17 +123,25 @@ class MABFedCL:
             self.historical_grad = self._compute_batch_grad(model, first_batch)
 
         # 第一阶段：利用多臂老虎机搜索最佳 tau
-        tau_values = [float(x) for x in self.args.tau_candidates.split(',')]
-        mab = UCB1(tau_values)
-        phi_static = self._compute_phi(self._compute_batch_grad(model, first_batch))
-        if isinstance(phi_static, torch.Tensor):
-            phi_static = phi_static.item()
-        for rnd in range(self.args.mab_rounds):
-            arm = mab.select_arm(rnd + 1)
-            tau_try = tau_values[arm]
-            reward = max(phi_static - tau_try, 0.0)
-            mab.update(arm, reward)
-        self.tau = tau_values[mab.best_arm()]
+        if global_tau is None:
+            tau_values = [float(x) for x in self.args.tau_candidates.split(',')]
+            mab = UCB1(tau_values)
+            phi_static = self._compute_phi(self._compute_batch_grad(model, first_batch))
+            if isinstance(phi_static, torch.Tensor):
+                phi_static = phi_static.item()
+            for rnd in range(self.args.mab_rounds):
+                arm = mab.select_arm(rnd + 1)
+                tau_try = tau_values[arm]
+                reward = max(phi_static - tau_try, 0.0)
+                mab.update(arm, reward)
+            self.tau = tau_values[mab.best_arm()]
+        else:
+            self.tau = global_tau
+
+        if search_only:
+            model = self.accelerator.unwrap_model(model)
+            model.cpu()
+            return None, None, 0, None, None, self.tau
 
         gradients = []
         phi_list = []
@@ -218,5 +228,11 @@ class MABFedCL:
             if name in corrected_delta:
                 param.data += corrected_delta[name].to(param.device)
 
+        return tau_global, None, None, self.g_model
+
+    def aggregate_tau(self, client_tau, client_sample_counts):
+        """Aggregate tau values from clients to get a global tau."""
+        total_samples = sum(client_sample_counts.values())
+        tau_global = sum(client_tau[cid] * client_sample_counts[cid] for cid in client_tau) / total_samples
         self.tau = tau_global
-        return self.tau, None, None, self.g_model
+        return self.tau
