@@ -126,10 +126,21 @@ class MABFedCL:
         if global_tau is None:
             tau_values = [float(x) for x in self.args.tau_candidates.split(',')]
             mab = UCB1(tau_values)
-            phi_static = self._compute_phi(self._compute_batch_grad(model, first_batch))
-            if isinstance(phi_static, torch.Tensor):
-                phi_static = phi_static.item()
+
+            mab_loader = iter(train_loader)
+
             for rnd in range(self.args.mab_rounds):
+                try:
+                    mab_batch = next(mab_loader)
+                except StopIteration:
+                    mab_loader = iter(train_loader)
+                    mab_batch = next(mab_loader)
+                grad_tmp = self._compute_batch_grad(model, mab_batch)
+                phi_static = self._compute_phi(grad_tmp)
+                if isinstance(phi_static, torch.Tensor):
+                    phi_static = phi_static.item()
+
+
                 arm = mab.select_arm(rnd + 1)
                 tau_try = tau_values[arm]
                 reward = max(phi_static - tau_try, 0.0)

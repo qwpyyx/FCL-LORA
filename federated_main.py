@@ -112,7 +112,7 @@ if __name__ == '__main__':
             os.makedirs(args.output_dir, exist_ok=True)
     accelerator.wait_for_everyone()
 
-    args.total_classes = 300
+    args.total_classes = 80
     logger.info('==> Building model..')
 
 
@@ -127,6 +127,7 @@ if __name__ == '__main__':
             exit()
         global_model.train(args.task, accelerator=accelerator, dev_loader=None)
         compute_metric(args, global_model)
+
 
     # ------------------------------------------------------------------------------------
     elif args.mode == 'centralized':

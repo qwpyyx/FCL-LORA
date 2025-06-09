@@ -123,8 +123,8 @@ class vitlora:
                                                'test': f"{self.data_dir}/test.csv"},
                                    delimiter=',')  # 确保读取CSV格式，指定分隔符
             # 重命名列
-            dataset = dataset.rename_column(original_column_name='text', new_column_name='input_text')
-            dataset = dataset.rename_column(original_column_name='category', new_column_name='label')
+            # dataset = dataset.rename_column(original_column_name='text', new_column_name='text')
+            dataset = dataset.rename_column(original_column_name='category', new_column_name='labels')
 
             # dataset = get_dataset("fewrel", tokenizer=None, args=self.args)
 
@@ -721,7 +721,7 @@ class vitlora:
                     lambda example: start_class <= example['labels'] < end_class
             )
 
-            task_mask = torch.zeros(300)
+            task_mask = torch.zeros(80)
             for idx in range(start_class, end_class):
                 task_mask[idx] = 1
             self.task_masks[task] = task_mask
