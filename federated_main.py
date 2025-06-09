@@ -7,7 +7,7 @@ import warnings
 os.environ["WANDB_MODE"] = "disabled"
 warnings.filterwarnings('ignore')
 from options import args_parser
-from utils import exp_details
+from utils import exp_details, compute_final_acc, compute_forgetting_rate
 from VITLORA import vitlora
 import logging
 logger = logging.getLogger(__name__)
@@ -15,7 +15,32 @@ from accelerate import Accelerator, DistributedDataParallelKwargs
 from transformers import (
     set_seed,
 )
+from types import SimpleNamespace
+import numpy as np
 
+def compute_metric(args, trainer):
+    """Compute average accuracy and forgetting rate using saved accuracy files."""
+    acc_path = os.path.join(args.output_dir, '..', f'progressive_acc_{args.seed}')
+    if not os.path.exists(acc_path):
+        logger.warning(f"Accuracy file {acc_path} not found; skip metric computation")
+        return
+
+    acc_matrix = np.loadtxt(acc_path)
+    task_accuracies = [acc_matrix[i][: i + 1].tolist() for i in range(args.task + 1)]
+    previous_task_accuracies = task_accuracies[:-1]
+
+    trainer.task_accuracies = task_accuracies
+    trainer.previous_task_accuracies = previous_task_accuracies
+
+    avg_acc = compute_final_acc(args, trainer) * 100
+    if previous_task_accuracies:
+        fgt = compute_forgetting_rate(task_accuracies, previous_task_accuracies) * 100
+    else:
+        fgt = float('nan')
+
+    logger.info(f"Task_accuracies is {task_accuracies}")
+    logger.info(f"previous_task_accuracies is {previous_task_accuracies}")
+    logger.info(f"Final Average Accuracy (ACC): {avg_acc:.4f}%, Final Forgetting (FGT): {fgt:.4f}%")
 
 if __name__ == '__main__':
     args = args_parser()
@@ -95,19 +120,19 @@ if __name__ == '__main__':
     if args.mode == 'federated':
 
         global_model = vitlora(args, task_size, args.device, accelerator)
-        global_model.setup_data(shuffle=True)
+        global_model.setup_data(shuffle=args.task == 0)
 
         global_model.beforeTrain(args.task)
         if global_model.all_tasks_completed:
             exit()
         global_model.train(args.task, accelerator=accelerator, dev_loader=None)
-
+        compute_metric(args, global_model)
 
     # ------------------------------------------------------------------------------------
     elif args.mode == 'centralized':
 
         centralized_trainer = vitlora(args, task_size, args.device, accelerator)
-        centralized_trainer.setup_data(shuffle=True)
+        centralized_trainer.setup_data(shuffle=args.task == 0)
 
         centralized_trainer.beforeTrain(args.task)
         if centralized_trainer.all_tasks_completed:

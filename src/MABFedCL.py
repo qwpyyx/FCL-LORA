@@ -183,9 +183,6 @@ class MABFedCL:
         # self.topk_ratio = best_k
         self.topk_ratio = 1.0
 
-
-
-
         save_dict = {"historical_avg_grad": self.historical_grad}
         output_file_path = os.path.join(current_output_dir, 'historical_avg_grad.pt')
         self.accelerator.save(save_dict, output_file_path)

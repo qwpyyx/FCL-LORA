@@ -38,7 +38,8 @@ def args_parser():
                         help="topk ratio")
     # parser.add_argument('--mix_precision', type=str, default='no')
     # model arguments
-    parser.add_argument('--model', type=str, default='mlp', help='bart_classification_bart-base')
+    parser.add_argument('--model', type=str, default='mlp', help='bart_classification_bart-base'
+                                                                 ' or classification_llama2-7b')
     parser.add_argument('--weight_decay', type=float, default=0.01)
     parser.add_argument('--log_dir', type=str, default=None)
     parser.add_argument('--baseline', type=str, default='vanilla',
@@ -93,7 +94,7 @@ def args_parser():
                         help='候选的阈值列表，逗号分隔')
     parser.add_argument('--mab_rounds', type=int, default=10,
                         help='MAB 搜索 tau 的探索轮数')
-    parser.add_argument('--lambda1', type=float, default=0.2,
+    parser.add_argument('--lambda1', type=float, default=0.8,
                         help='遗忘惩罚系数')
     parser.add_argument('--lambda2', type=float, default=0.1,
                         help='通信惩罚系数')
@@ -127,7 +128,7 @@ def args_parser():
     parser.add_argument('--mode', type=str, default='federated', choices=['federated', 'centralized'],
                         help="Mode: 'federated' or 'centralized'")
     parser.add_argument('--model_name_or_path', type=str, default='/home/qiuwenqi/LLM/models/bart-base',
-                        help="moedel_name: roberta or llama2")
+                        help="moedel_name: bart, roberta or llama2")
     parser.add_argument('--combine', default=False, type=bool, help='Whether to combine the data')
     parser.add_argument('--is_peft', type=int, default=1,
                         help="Whether to use peft such as lora to fine tune model")

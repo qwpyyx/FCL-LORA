@@ -19,7 +19,7 @@ from transformers.file_utils import ModelOutput
 from peft import get_peft_model, LoraConfig, TaskType, PeftModel, PeftConfig
 from transformers.models.bart.modeling_bart import BartClassificationHead
 from torch.nn import CrossEntropyLoss, MSELoss
-from transformers.modeling_outputs import Seq2SeqLMOutput, Seq2SeqSequenceClassifierOutput
+from transformers.modeling_outputs import Seq2SeqLMOutput, Seq2SeqSequenceClassifierOutput, SequenceClassifierOutput
 import numpy as np
 import torch.nn.functional as F
 

@@ -649,7 +649,27 @@ class vitlora:
         test_targets = self.test_set['labels']
         unique_classes = sorted(set(train_targets) | set(test_targets))
         self.total_classes = len(unique_classes)
-        self.class_order = np.random.permutation(unique_classes).tolist() if shuffle else unique_classes
+        root_dir = os.path.join(
+            self.args.base_dir,
+            f"seq_{self.args.idrandom}_seed{self.args.seed}",
+            str(self.args.baseline),
+            str(self.args.dataset),
+            f"topK_{self.args.topk_ratio}"
+        )
+        os.makedirs(root_dir, exist_ok=True)
+        class_order_path = os.path.join(root_dir, 'class_order.json')
+
+        if self.args.task == 0:
+            self.class_order = np.random.permutation(unique_classes).tolist() if shuffle else unique_classes
+            dump_json(self.class_order, class_order_path)
+            print(f"[Task 0] Saved class order to {class_order_path}")
+        else:
+            if os.path.exists(class_order_path):
+                self.class_order = load_json(class_order_path)  # 注意：不再 map(int, ...)
+                print(f"[Task {self.args.task}] Loaded class order from {class_order_path}")
+            else:
+                raise FileNotFoundError(f"class_order.json not found at {class_order_path}. "
+                                        f"Please make sure task 0 has run and class order is saved.")
 
         label_mapping = {old_label: new_label for new_label, old_label in enumerate(self.class_order)}
 

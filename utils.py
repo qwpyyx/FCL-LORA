@@ -801,8 +801,8 @@ def prepare_sequence_finetune(args):
             args.model_name_or_path = '/home/qiuwenqi/LLM/models/bart-base'  # Use the local backup.
         elif 'bart-large' in args.baseline:
             args.model_name_or_path = '/home/qiuwenqi/LLM/models/bart-large'
-        else:
-            raise NotImplementedError('Currently, we only support BART as the backbone model.')
+        elif 'llama' in args.baseline:
+            args.model_name_or_path = '/home/qiuwenqi/LLM/models/LLAMA2-7B-chat-hf'
 
     else:
         args.model_name_or_path = ckpt
@@ -883,8 +883,8 @@ def update_args(args):
             args.model_name_or_path = '/home/qiuwenqi/LLM/models/bart-base'  # Use the local backup.
         elif 'bart-large' in args.baseline:
             args.model_name_or_path = '/home/qiuwenqi/LLM/models/bart-large'
-        else:
-            raise NotImplementedError('Currently, we only support BART as the backbone model.')
+        elif 'llama' in args.baseline:
+            args.model_name_or_path = '/home/qiuwenqi/LLM/models/LLAMA2-7B-chat-hf'
 
     else:
         args.model_name_or_path = ckpt
