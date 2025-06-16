@@ -20,7 +20,7 @@ class MABFedCL:
         self.tau = tau                  # 当前阈值
         self.topk_ratio = topk_ratio    # 当前压缩比例
         self.historical_grad = None     # 历史梯度均值
-        self.alpha = 1                  # softplus 系数
+        self.alpha = 2                  # softplus 系数
         # 惩罚系数
         self.lambda1 = args.lambda1
         self.lambda2 = args.lambda2
@@ -192,7 +192,7 @@ class MABFedCL:
         #         best_score = score
         #         best_k = k_val
         # self.topk_ratio = best_k
-        self.topk_ratio = 1.0
+
 
         save_dict = {"historical_avg_grad": self.historical_grad}
         output_file_path = os.path.join(current_output_dir, 'historical_avg_grad.pt')

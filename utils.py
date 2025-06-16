@@ -1103,3 +1103,25 @@ def save_mab_state(tau, k_ratio, accelerator, output_dir):
     }
     output_file_path = os.path.join(output_dir, 'preserved_mab_state.pt')
     accelerator.save(state, output_file_path)
+
+def save_global_tau(tau, task_id, epoch, output_dir):
+    """Append the aggregated ``tau`` value to ``global_tau_history.txt``.
+
+    Parameters
+    ----------
+    tau : float
+        Global threshold aggregated from clients.
+    task_id : int
+        Index of the current task.
+    epoch : int
+        Epoch number within the task.
+    output_dir : str
+        Directory corresponding to the current task. The history file will be
+        saved one level above this directory.
+    """
+
+    history_dir = os.path.join(output_dir, '..')
+    os.makedirs(history_dir, exist_ok=True)
+    history_path = os.path.join(history_dir, 'global_tau_history.txt')
+    with open(history_path, 'a', encoding='utf-8') as f:
+        f.write(f"{task_id}\t{epoch}\t{tau}\n")

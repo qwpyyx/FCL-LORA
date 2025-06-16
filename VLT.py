@@ -95,6 +95,8 @@ class LLMWithLoRA(PreTrainedModel):
         self.masked_label = None
 
 
+    def set_masked_label(self, masked_label: torch.Tensor):
+        self.masked_label = masked_label.to(next(self.parameters()).device)
 
 
     def forward(

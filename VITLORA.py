@@ -5,7 +5,7 @@ from tqdm import tqdm
 from CPN import *
 from datasets import load_dataset
 import math
-from utils import _load_clinc150_data, _load_fewrel_data, _load_trace_data, save_old_param
+from utils import _load_clinc150_data, _load_fewrel_data, _load_trace_data, save_old_param, save_global_tau
 import torch
 from transformers import (
     MODEL_MAPPING,
@@ -743,7 +743,7 @@ class vitlora:
         for i in range(self.args.task + 1):
             self.current_test = self.current_test_set[i]
             individual_test_loader = DataLoader(
-                self.current_test, batch_size=self.args.local_bs, shuffle=True,
+                self.current_test, batch_size=self.args.local_bs, shuffle=False,
                 num_workers=0, collate_fn=self.data_collator
             )
             self.list_of_individual_testloader.append(individual_test_loader)
@@ -790,6 +790,10 @@ class vitlora:
 
                     local_model_copy = copy.deepcopy(self.global_model)
 
+                    mask = self.task_masks[current_task]  # 你已经构建好的 0/1 向量
+                    local_model_copy.set_masked_label(mask)
+                    # local_model_copy.masked_label = mask.to(accelerator.device)
+
                     _, _, _, _, _, tau_val = self.update_weights_local(
                         model=local_model_copy,
                         lr=encoder_lr,
@@ -803,6 +807,13 @@ class vitlora:
                     client_tau[idx] = tau_val
 
                 tau_global = self.fedcl_module.aggregate_tau(client_tau, client_sample_counts)
+
+                # test
+                tau_global = 0.8
+                save_global_tau(tau_global, current_task, epoch, self.args.output_dir)
+
+                if accelerator.is_main_process:
+                    logger.info(f"tau_global is {tau_global}, and client_tau {client_tau}")
             else:
                 for idx in idxs_users:
                     # 每个客户端使用其对应的索引
@@ -820,6 +831,10 @@ class vitlora:
                                           collate_fn=self.data_collator)
 
                 local_model_copy = copy.deepcopy(self.global_model)
+                mask = self.task_masks[current_task]  # 你已经构建好的 0/1 向量
+                local_model_copy.set_masked_label(mask)
+
+                # local_model_copy.set_masked_label(self.task_masks[current_task])
 
                 if 'AMAFCL' in self.args.baseline:
                     prototypes, R_i, total_samples, delta_model, phi_avg = self.update_weights_local(model=local_model_copy,
@@ -843,7 +858,7 @@ class vitlora:
                         dev_loader=None, idx=idx,
                         current_task=current_task,
                         search_only=False,
-                        global_tau=tau_global
+                        global_tau=0.8
                     )
                     grad_dist[idx] = delta_model
                     client_prototypes[idx] = prototypes
@@ -1181,7 +1196,7 @@ class vitlora:
                 historical_grad=loaded_hist_grad,
                 local_ep=self.args.local_ep,
                 current_task=current_task,
-                global_tau=global_tau,
+                global_tau=0.8,
                 search_only=search_only,
             )
             # tau_val 为本轮搜索得到的最佳阈值
