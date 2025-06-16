@@ -809,7 +809,7 @@ class vitlora:
                 tau_global = self.fedcl_module.aggregate_tau(client_tau, client_sample_counts)
 
                 # test
-                tau_global = 0.8
+
                 save_global_tau(tau_global, current_task, epoch, self.args.output_dir)
 
                 if accelerator.is_main_process:
@@ -858,7 +858,7 @@ class vitlora:
                         dev_loader=None, idx=idx,
                         current_task=current_task,
                         search_only=False,
-                        global_tau=0.8
+                        global_tau=tau_global
                     )
                     grad_dist[idx] = delta_model
                     client_prototypes[idx] = prototypes
@@ -1196,7 +1196,7 @@ class vitlora:
                 historical_grad=loaded_hist_grad,
                 local_ep=self.args.local_ep,
                 current_task=current_task,
-                global_tau=0.8,
+                global_tau=global_tau,
                 search_only=search_only,
             )
             # tau_val 为本轮搜索得到的最佳阈值

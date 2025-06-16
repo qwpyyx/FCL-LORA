@@ -90,7 +90,7 @@ def args_parser():
                         strided convolutions")
 
     # MAB
-    parser.add_argument('--tau_candidates', type=str, default='0.1,0.2,0.3,0.4,0.5,0.7,0.9',
+    parser.add_argument('--tau_candidates', type=str, default='0.9',
                         help='候选的阈值列表，逗号分隔')
     parser.add_argument('--mab_rounds', type=int, default=10,
                         help='MAB 搜索 tau 的探索轮数')
