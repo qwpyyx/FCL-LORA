@@ -20,7 +20,7 @@ class MABFedCL:
         self.tau = tau                  # 当前阈值
         self.topk_ratio = topk_ratio    # 当前压缩比例
         self.historical_grad = None     # 历史梯度均值
-        self.alpha = 2                  # softplus 系数
+        self.alpha = 100                  # softplus 系数
         # 惩罚系数
         self.lambda1 = args.lambda1
         self.lambda2 = args.lambda2
@@ -175,7 +175,7 @@ class MABFedCL:
                 if lr_scheduler is not None:
                     lr_scheduler.step()
                 progress_bar.update(1)
-                progress_bar.set_description('Train Iter (Epoch=%3d,loss=%5.3f)' % (ep, total_loss.item()))
+                progress_bar.set_description('Train Iter (Epoch=%3d,loss=%5.3f, lambda=%5.3f)' % (ep, total_loss.item(), self.lambda1))
 
         self.accelerator.wait_for_everyone()
         phi_avg = torch.mean(torch.stack(phi_list))
