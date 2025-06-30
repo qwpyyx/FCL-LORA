@@ -18,7 +18,7 @@ from networks.buffer import FixedSizeBuffer
 from sklearn.metrics import f1_score, confusion_matrix
 from FedCLModule import FedCLModule
 from src.MABFedCL import MABFedCL
-
+import os
 logger = logging.getLogger(__name__)
 MODEL_CONFIG_CLASSES = list(MODEL_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
@@ -38,6 +38,10 @@ class vitlora:
         self.classes = None
         self.old_model = None
         self.list_of_testloader = list()
+        self.lora_M = None
+        self.lora_Q = None
+
+
         # -----------------------
         self._load_datasets()
         update_args(self.args)
@@ -751,6 +755,23 @@ class vitlora:
     def train(self, current_task, accelerator, dev_loader):
 
         encoder_lr = self.args.encoders_lr
+        # TODO 不是output_dir，要是一个固定的不随任务改变的路径
+        # Load historical LoRA information
+
+        history_dir = os.path.abspath(os.path.join(self.args.output_dir, '..'))
+        os.makedirs(history_dir, exist_ok=True)
+        m_path = os.path.join(history_dir, 'lora_M.pt')
+        q_path = os.path.join(history_dir, 'lora_Q.pt')
+        if os.path.exists(m_path):
+            self.lora_M = torch.load(m_path, map_location='cpu')['M']
+        if os.path.exists(q_path):
+            self.lora_Q = torch.load(q_path, map_location='cpu')['Q']
+
+        # Record initial LoRA parameters for this task
+        self._lora_start = {
+            n: p.detach().clone() for n, p in self.global_model.named_parameters() if 'lora_A' in n
+        }
+
 
         for epoch in tqdm(range(self.args.epochs)):
             sample_num = []
@@ -803,6 +824,8 @@ class vitlora:
                         idx=idx,
                         current_task=current_task,
                         search_only=True,
+                        global_tau=None,
+                        Q=self.lora_Q,
                     )
                     client_tau[idx] = tau_val
 
@@ -858,7 +881,8 @@ class vitlora:
                         dev_loader=None, idx=idx,
                         current_task=current_task,
                         search_only=False,
-                        global_tau=tau_global
+                        global_tau=tau_global,
+                        Q=self.lora_Q
                     )
                     grad_dist[idx] = delta_model
                     client_prototypes[idx] = prototypes
@@ -873,7 +897,8 @@ class vitlora:
                     local_model, _ = self.update_weights_local(model=local_model_copy, lr=encoder_lr,
                                                                train_loader=train_loader, accelerator=accelerator,
                                                                dev_loader=None,
-                                                               idx=idx, current_task=current_task)
+                                                               idx=idx, current_task=current_task,
+                                                               Q=None)
 
                     grad, param = self.get_grad(local_model)
                     grad_dist[idx] = grad
@@ -1058,8 +1083,29 @@ class vitlora:
         training_args = {k: v for k, v in self.args.__dict__.items() if k != 'device'}
         dump_json(training_args, self.args.output_dir + '/../training_args.json')
 
+        if 'MABFedCL' in self.args.baseline:
+            # After finishing the task, update LoRA history
+            end_state = {n: p.detach().cpu() for n, p in self.global_model.named_parameters() if 'lora_A' in n}
+            delta_vec = torch.cat([(end_state[n] - self._lora_start[n].cpu()).view(-1) for n in end_state])
+            if self.lora_M is None:
+                self.lora_M = delta_vec.unsqueeze(1)
+            else:
+                self.lora_M = torch.cat([self.lora_M, delta_vec.unsqueeze(1)], dim=1)
+            k = min(self.args.orthogonal_k, self.lora_M.shape[1])
+            try:
+                U, S, V = torch.svd_lowrank(self.lora_M, q=k)
+                self.lora_Q = U[:, :k]
+            except Exception as e:
+                logger.warning(f'SVD failed: {e}')
+            torch.save({'M': self.lora_M.cpu()}, m_path)
+            if self.lora_Q is not None:
+                torch.save({'Q': self.lora_Q.cpu()}, q_path)
+
+
+
+
     def update_weights_local(self, model, lr, train_loader, accelerator, dev_loader, idx, current_task,
-                             search_only=False, global_tau=None):
+                             search_only=False, global_tau=None, Q=None):
         model.train()
         if accelerator.is_main_process:
             logger.info(f"Client {idx} Task {current_task}: 开始训练")
@@ -1142,12 +1188,15 @@ class vitlora:
             model, optimizer, train_loader = accelerator.prepare(model, optimizer, train_loader)
 
             # 调用新的接口 local_training_with_optimizer，直接传入已经包装好的 optimizer
-            prototypes, R_i, total_samples, delta_model,  phi_avg = self.fedcl_module.local_training(model, train_loader,
+            prototypes, R_i, total_samples, delta_model, phi_avg, _= self.fedcl_module.local_training(model, train_loader,
                                                                                            optimizer, lr_scheduler,
                                                                                            idx, current_output_dir,
                                                                                            historical_grad=loaded_hist_grad,
                                                                                            local_ep=self.args.local_ep,
-                                                                                           current_task=current_task)
+                                                                                           current_task=current_task,
+                                                                                            Q=self.lora_Q)
+
+
 
             if accelerator.is_main_process:
                 logger.info(f"Client {idx} Task {current_task}: AMAFCL 本地训练结束")
@@ -1198,6 +1247,7 @@ class vitlora:
                 current_task=current_task,
                 global_tau=global_tau,
                 search_only=search_only,
+                Q=self.lora_Q,
             )
             # tau_val 为本轮搜索得到的最佳阈值
 

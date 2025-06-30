@@ -24,6 +24,12 @@ class MABFedCL:
         # 惩罚系数
         self.lambda1 = args.lambda1
         self.lambda2 = args.lambda2
+        self.lambda_orth = args.lambda_orth
+        # 奇异值
+        self.k = args.orthogonal_k
+        # 正交基
+        self.Q = None
+
 
     # 保存模型权重的辅助函数
     def _get_state_dict(self, model):
@@ -104,7 +110,7 @@ class MABFedCL:
     # 执行两阶段的本地训练流程并返回压缩后的模型差分
     def local_training(self, model, train_loader, optimizer, lr_scheduler, idx,
                        current_output_dir, historical_grad=None, local_ep=1,
-                       current_task=0, global_tau=None, search_only=False):
+                       current_task=0, global_tau=None, search_only=False, Q=None):
         if self.accelerator.is_main_process:
             logger.info("***** Running training in Local Client *****")
             logger.info(f"Client idx = {idx},  training size = {train_loader.total_dataset_length}")
@@ -116,6 +122,10 @@ class MABFedCL:
             print("Begin Local Training!")
 
         first_batch = next(iter(train_loader))
+
+        # 加载历史主子空间
+        if Q is not None:
+            self.Q = Q.to(self.accelerator.device)
 
         if historical_grad is not None:
             self.historical_grad = historical_grad.to(self.accelerator.device)
@@ -164,11 +174,22 @@ class MABFedCL:
                 phi_val = self._compute_phi(g_new)
                 phi_list.append(phi_val.detach())
                 gradients.append(g_new.detach())
-                phi_loss = F.softplus(self.alpha * (self.tau - phi_val)) / self.alpha
+                # phi_loss = F.softplus(self.alpha * (self.tau - phi_val)) / self.alpha
                 batch = {k: v.to(self.accelerator.device) if hasattr(v, "to") else v for k, v in batch.items()}
                 outputs = model(**batch, restrict_label=True)
                 task_loss = outputs.loss
-                total_loss = task_loss + self.lambda1 * phi_loss
+
+                # total_loss = task_loss + self.lambda1 * phi_loss
+
+                lora_params = [p for n, p in model.named_parameters() if 'lora_A' in n]
+                L_orth = 0.0
+                if self.Q is not None and lora_params:
+                    g_vec = torch.cat([p.view(-1) for p in lora_params])
+                    proj = torch.matmul(self.Q.t(), g_vec)
+                    L_orth = self.lambda_orth * torch.sum(proj ** 2)
+
+                total_loss = task_loss + L_orth
+
                 optimizer.zero_grad()
                 self.accelerator.backward(total_loss)
                 optimizer.step()

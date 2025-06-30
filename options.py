@@ -90,9 +90,9 @@ def args_parser():
                         strided convolutions")
 
     # MAB
-    parser.add_argument('--tau_candidates', type=str, default='0.9',
+    parser.add_argument('--tau_candidates', type=str, default='0.1,0.15,0.2,0.3,0.9',
                         help='候选的阈值列表，逗号分隔')
-    parser.add_argument('--mab_rounds', type=int, default=10,
+    parser.add_argument('--mab_rounds', type=int, default=1,
                         help='MAB 搜索 tau 的探索轮数')
     parser.add_argument('--lambda1', type=float, default=0.8,
                         help='遗忘惩罚系数')
@@ -100,6 +100,10 @@ def args_parser():
                         help='通信惩罚系数')
     parser.add_argument('--k_candidates', type=str, default='0.1,0.2,0.3,0.4,0.5',
                         help='候选的压缩率列表')
+    parser.add_argument('--orthogonal_k', type=int, default=5,
+                        help='历史LoRA增量SVD的主成分数量')
+    parser.add_argument('--lambda_orth', type=float, default=1.0,
+                        help='正交化损失权重')
 
 
     # other arguments
