@@ -43,6 +43,7 @@ class LLMWithLoRA(PreTrainedModel):
                  is_peft: bool,
                  num_classes: int,
                  r: int = 4,
+                 args=None,
                  lora_layer=None,
                  return_feature=True):
         config = AutoConfig.from_pretrained(
@@ -55,6 +56,7 @@ class LLMWithLoRA(PreTrainedModel):
         )
         super().__init__(config)
 
+        self.args = args
         # 使用预训练LLM模型
         self.tokenizer = AutoTokenizer.from_pretrained(
             modelname,
@@ -88,8 +90,11 @@ class LLMWithLoRA(PreTrainedModel):
                                      bias="none",
                                      lora_dropout=0.1,
                                      fan_in_fan_out=True)
-
-            self.model = get_peft_model(self.model, lora_config)
+            if hasattr(args, "baseline") and "olora" in args.baseline:
+                from custom_peft.olora_inject import get_olora_model
+                self.model = get_olora_model(self.model, lora_config, args, adapter_name="default")
+            else:
+                self.model = get_peft_model(self.model, lora_config)
 
         self.model.resize_token_embeddings(len(self.tokenizer))
         self.masked_label = None
@@ -133,24 +138,46 @@ class LLMWithLoRA(PreTrainedModel):
                 f"Passing input embeddings is currently not supported for {self.__class__.__name__}"
             )
         if self.is_peft:
-            outputs = self.model(
-                input_ids,
-                attention_mask=attention_mask,
-                decoder_input_ids=decoder_input_ids,
-                decoder_attention_mask=decoder_attention_mask,
-                head_mask=head_mask,
-                decoder_head_mask=decoder_head_mask,
-                cross_attn_head_mask=cross_attn_head_mask,
-                encoder_outputs=encoder_outputs,
-                inputs_embeds=inputs_embeds,
-                decoder_inputs_embeds=decoder_inputs_embeds,
-                use_cache=use_cache,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
-                return_dict=return_dict,
-                adapter_names=adapter_names,
-            )
+            # 是 PEFT 微调，再判断是不是 oLoRA
+            if hasattr(self.args, "baseline") and "olora" in self.args.baseline:
+                # oLoRA 不支持 adapter_names
+                outputs = self.model(
+                    input_ids,
+                    attention_mask=attention_mask,
+                    decoder_input_ids=decoder_input_ids,
+                    decoder_attention_mask=decoder_attention_mask,
+                    head_mask=head_mask,
+                    decoder_head_mask=decoder_head_mask,
+                    cross_attn_head_mask=cross_attn_head_mask,
+                    encoder_outputs=encoder_outputs,
+                    inputs_embeds=inputs_embeds,
+                    decoder_inputs_embeds=decoder_inputs_embeds,
+                    use_cache=use_cache,
+                    output_attentions=output_attentions,
+                    output_hidden_states=output_hidden_states,
+                    return_dict=return_dict,
+                )
+            else:
+                # 正常 LoRA 支持 adapter_names
+                outputs = self.model(
+                    input_ids,
+                    attention_mask=attention_mask,
+                    decoder_input_ids=decoder_input_ids,
+                    decoder_attention_mask=decoder_attention_mask,
+                    head_mask=head_mask,
+                    decoder_head_mask=decoder_head_mask,
+                    cross_attn_head_mask=cross_attn_head_mask,
+                    encoder_outputs=encoder_outputs,
+                    inputs_embeds=inputs_embeds,
+                    decoder_inputs_embeds=decoder_inputs_embeds,
+                    use_cache=use_cache,
+                    output_attentions=output_attentions,
+                    output_hidden_states=output_hidden_states,
+                    return_dict=return_dict,
+                    adapter_names=adapter_names,
+                )
         else:
+            # 非 PEFT，全量微调路径
             outputs = self.model(
                 input_ids,
                 attention_mask=attention_mask,
@@ -167,6 +194,7 @@ class LLMWithLoRA(PreTrainedModel):
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict,
             )
+
         hidden_states = outputs['decoder_hidden_states'][-1]  # last hidden state
 
         # eos_mask = input_ids.eq(self.config.eos_token_id)
@@ -292,6 +320,25 @@ class MyBart(nn.Module):
         loss = outputs.loss
         logits = outputs.logits
         distill_loss = None
+
+        if "olora" in self.args.baseline:
+            orthogonal_loss = 0.
+            for name, param in self.model.model.named_parameters():
+                if "lora_A" in name:
+                    for name_, param_ in self.model.model.named_parameters():
+                        if "loranew_A" in name_ and name.split("lora_A")[0] == name_.split("loranew_A")[0]:
+                            orthogonal_loss += torch.abs(torch.mm(param, param_.T)).sum()
+                            break
+
+            # l2_loss = 0.
+            # for name, param in self.model.model.named_parameters():
+            #     if "loranew_" in name:
+            #         l2_loss += torch.norm(param, p=2)
+
+            lambda_3 = self.args.lambda3
+
+
+            loss = loss + orthogonal_loss * lambda_3
 
         # For experience replay, interleaving old samples with current data in training batches.
         if 'experience_replay' in self.args.baseline and buffer is not None and buffer.num_seen_examples > 0:

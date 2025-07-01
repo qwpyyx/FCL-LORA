@@ -105,6 +105,14 @@ def args_parser():
     parser.add_argument('--lambda_orth', type=float, default=1.0,
                         help='正交化损失权重')
 
+    # O-LoRA
+    parser.add_argument('--lambda3', type=float, default=0.8,
+                        help='遗忘惩罚系数')
+    parser.add_argument('--lambda4', type=float, default=0.1,
+                        help='通信惩罚系数')
+
+
+
 
     # other arguments
     parser.add_argument('--dataset', type=str, default='mnist', help="name \

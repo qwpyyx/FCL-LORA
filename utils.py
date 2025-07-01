@@ -898,6 +898,7 @@ def initialize_model(args):
             is_peft=args.is_peft,
             num_classes=args.total_classes,
             r=args.r,
+            args=args
             # lora_layer=["query", "value"]
         )
         # model = model.to(args.device)
@@ -929,6 +930,7 @@ def initialize_model(args):
                         is_peft=args.is_peft,
                         num_classes=args.total_classes,
                         r=args.r,
+                        args=args
                     )
                     data_collator = base_model.data_collator
                     tokenizer = base_model.tokenizer
@@ -950,23 +952,33 @@ def initialize_model(args):
                         is_peft=args.is_peft,
                         num_classes=args.total_classes,
                         r=args.r,
+                        args=args
                         # lora_layer=["query", "value"]
                     )
                     data_collator = model.data_collator
                     tokenizer = model.tokenizer
                     model = MyBart(model, args=args)
                     model.load_state_dict(checkpoint["state_dict"], strict=False)  # 加载权重
+
                     print(f"Loaded MyBart model from {ckpt_path}")
         else:
             raise FileNotFoundError(f"Checkpoint not found at {ckpt_path}")
 
     if args.is_peft:
-        # 固定所有参数，只更新lora参数
+        # 固定所有参数
         for name, param in model.model.named_parameters():
             param.requires_grad = False
-        for name, param in model.model.named_parameters():
-            if "lora" in name.lower():
-                param.requires_grad = True
+
+        if "olora" in args.baseline:
+            # 只训练 loranew_ 参数
+            for name, param in model.model.named_parameters():
+                if "loranew_" in name:
+                    param.requires_grad = True
+        else:
+            # 其他 peft baseline（如普通 LoRA）则训练 lora_ 参数
+            for name, param in model.model.named_parameters():
+                if "lora_" in name.lower():
+                    param.requires_grad = True
     else:
         # full fine tune
         for param in model.model.parameters():

@@ -757,20 +757,20 @@ class vitlora:
         encoder_lr = self.args.encoders_lr
         # TODO 不是output_dir，要是一个固定的不随任务改变的路径
         # Load historical LoRA information
+        if 'MABFedCL' in self.args.baseline:
+            history_dir = os.path.abspath(os.path.join(self.args.output_dir, '..'))
+            os.makedirs(history_dir, exist_ok=True)
+            m_path = os.path.join(history_dir, 'lora_M.pt')
+            q_path = os.path.join(history_dir, 'lora_Q.pt')
+            if os.path.exists(m_path):
+                self.lora_M = torch.load(m_path, map_location='cpu')['M']
+            if os.path.exists(q_path):
+                self.lora_Q = torch.load(q_path, map_location='cpu')['Q']
 
-        history_dir = os.path.abspath(os.path.join(self.args.output_dir, '..'))
-        os.makedirs(history_dir, exist_ok=True)
-        m_path = os.path.join(history_dir, 'lora_M.pt')
-        q_path = os.path.join(history_dir, 'lora_Q.pt')
-        if os.path.exists(m_path):
-            self.lora_M = torch.load(m_path, map_location='cpu')['M']
-        if os.path.exists(q_path):
-            self.lora_Q = torch.load(q_path, map_location='cpu')['Q']
-
-        # Record initial LoRA parameters for this task
-        self._lora_start = {
-            n: p.detach().clone() for n, p in self.global_model.named_parameters() if 'lora_A' in n
-        }
+            # Record initial LoRA parameters for this task
+            self._lora_start = {
+                n: p.detach().clone() for n, p in self.global_model.named_parameters() if 'lora_A' in n
+            }
 
 
         for epoch in tqdm(range(self.args.epochs)):
@@ -872,6 +872,22 @@ class vitlora:
                     client_sample_counts[idx] = total_samples
                     client_phi[idx] = phi_avg
 
+
+                elif 'olora' in self.args.baseline:
+                    local_model, _ = self.update_weights_local(
+                        model=local_model_copy,
+                        lr=encoder_lr,
+                        train_loader=train_loader,
+                        accelerator=accelerator,
+                        dev_loader=None,
+                        idx=idx,
+                        current_task=current_task,
+                        Q=None  # 如果你还没引入 TopK，那可以传 None
+                    )
+                    grad, param = self.get_grad(local_model)
+                    grad_dist[idx] = grad
+
+
                 elif 'MABFedCL' in self.args.baseline:
                     prototypes, R_i, total_samples, delta_model, phi_avg, _ = self.update_weights_local(
                         model=local_model_copy,
@@ -931,6 +947,20 @@ class vitlora:
                                                          partition_map=user_groups)
 
         accelerator.wait_for_everyone()
+
+        if "olora" in self.args.baseline and self.args.is_peft:
+            for name, param in self.global_model.named_parameters():
+                if "lora_A" in name:
+                    for name_, param_ in self.global_model.named_parameters():
+                        if "loranew_A" in name_ and name.split("lora_A")[0] == name_.split("loranew_A")[0]:
+                            new_A = torch.cat([param.data, param_.data], dim=0)
+                            param.data = new_A.clone()
+                elif "lora_B" in name:
+                    for name_, param_ in self.global_model.named_parameters():
+                        if "loranew_B" in name_ and name.split("lora_B")[0] == name_.split("loranew_B")[0]:
+                            new_B = torch.cat([param.data, param_.data], dim=1)
+                            param.data = new_B.clone()
+
         if accelerator.is_main_process:
             if dev_loader is None:
                 # If we don't use dev set for early stopping, we save the model after the training is finished.
@@ -1306,7 +1336,11 @@ class vitlora:
             optimizer_P = accelerator.prepare(optimizer_P)
 
         network_params = []
-        if self.args.is_peft:
+        if self.args.is_peft and 'olora' in self.args.baseline:
+            for name, param in model.named_parameters():
+                if 'loranew' in name.lower() and param.requires_grad:
+                    network_params.append({'params': param, 'lr': lr})
+        elif self.args.is_peft and 'lora' in self.args.baseline:
             for name, param in model.named_parameters():
                 if 'lora' in name.lower() and param.requires_grad:
                     network_params.append({'params': param, 'lr': lr})
